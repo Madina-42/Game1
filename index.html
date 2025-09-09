@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clean the Park! 🌳🗑️</title>
+  <style>
+    :root{
+      --bg1:#56CCF2;
+      --bg2:#2F80ED;
+      --accent:#F2994A;
+      --glass:rgba(255,255,255,0.15);
+      --text:#fff;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family:'Poppins',sans-serif;color:var(--text)}
+    body{
+      display:flex;align-items:center;justify-content:center;min-height:100vh;
+      background:linear-gradient(135deg,var(--bg1),var(--bg2));
+      overflow:hidden;
+    }
+    .stage{
+      width:100%;height:100%;position:relative;display:flex;flex-direction:column;align-items:center;
+      justify-content:flex-start;gap:12px;padding:28px;text-align:center;user-select:none;
+    }
+    h1{font-size:clamp(1.6rem,4vw,2.6rem);margin:16px 0;text-shadow:0 3px 10px rgba(0,0,0,0.4)}
+    .hud{position:fixed;top:20px;left:50%;transform:translateX(-50%);
+      background:var(--glass);backdrop-filter:blur(6px);
+      padding:12px 20px;border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,0.25);
+      font-size:0.95rem;text-align:center;}
+    #level{margin-top:4px;font-weight:700;color:var(--accent)}
+    #bin{
+      position:fixed;right:20px;bottom:20px;width:100px;height:100px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;font-size:48px;
+      background:radial-gradient(circle at 30% 30%,rgba(255,255,255,0.4),rgba(0,0,0,0.2));
+      box-shadow:0 10px 25px rgba(0,0,0,0.35);
+      transition:transform .2s ease;
+    }
+    #bin.catch-anim{transform:scale(1.2)}
+    .trash{
+      position:absolute;font-size:34px;cursor:pointer;transition:transform .1s linear,opacity .25s;
+      user-select:none;will-change:transform;z-index:40;
+    }
+    .trash.wiggle{animation:wiggle .5s infinite alternate ease-in-out}
+    @keyframes wiggle{from{transform:rotate(-10deg)}to{transform:rotate(10deg)}}
+    .paw{
+      position:fixed;left:50%;top:20%;transform:translate(-50%,-50%);
+      font-size:44px;opacity:0;pointer-events:none;z-index:100;
+      transition:opacity .3s ease, transform .3s ease;
+    }
+    footer{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);
+      font-size:0.8rem;color:#f8f8f8;opacity:.85;text-align:center}
+    @media(max-width:600px){
+      #bin{width:80px;height:80px;font-size:36px}
+      .trash{font-size:28px}
+      h1{font-size:1.4rem}
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <h1>Clean the Park! 🌳🗑️</h1>
+
+    <div class="hud">
+      <div id="message">Click anywhere to start. Catch trash and drag it into the bin.</div>
+      <div id="level">Level: 1</div>
+      <div id="score">Recycled: 0</div>
+    </div>
+
+    <div id="bin">🗑️</div>
+    <div id="paw" class="paw">🐾</div>
+
+    <footer>Drag trash into the bin. Trash will try to escape when you get close. Catch them all to level up!</footer>
+  </div>
+
+  <script>
+    const trashTypes=["🍌","🍕","🥤","🥑","🤡"];
+    let level=1,trashCount=3,recycled=0,trashItems=[],started=false;
+    const stage=document.getElementById('stage');
+    const bin=document.getElementById('bin');
+    const message=document.getElementById('message');
+    const levelEl=document.getElementById('level');
+    const scoreEl=document.getElementById('score');
+    const paw=document.getElementById('paw');
+
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    let bgOsc,bgGain;
+    function startMusic(){if(ctx.state==='suspended')ctx.resume();if(bgOsc)return;
+      bgOsc=ctx.createOscillator();bgGain=ctx.createGain();bgOsc.type='sine';bgOsc.frequency.value=220;
+      bgGain.gain.value=0.02;bgOsc.connect(bgGain).connect(ctx.destination);bgOsc.start();
+      let i=0;setInterval(()=>{const f=[220,246,293,329,392];bgOsc.frequency.linearRampToValueAtTime(f[i%f.length],ctx.currentTime+.2);i++;},800)}
+    function playCatch(){const o=ctx.createOscillator();const g=ctx.createGain();o.type='triangle';o.frequency.value=400+Math.random()*300;g.gain.value=.001;o.connect(g).connect(ctx.destination);
+      let now=ctx.currentTime;g.gain.exponentialRampToValueAtTime(.15,now+.01);g.gain.exponentialRampToValueAtTime(.001,now+.25);
+      o.start(now);o.stop(now+.26)}
+
+    function rand(min,max){return Math.random()*(max-min)+min}
+    function pick(a){return a[Math.floor(Math.random()*a.length)]}
+
+    function createTrash(num){for(let i=0;i<num;i++){const t=document.createElement('div');t.className='trash';t.textContent=pick(trashTypes);
+      t.style.left=rand(50,window.innerWidth-100)+'px';t.style.top=rand(120,window.innerHeight-150)+'px';
+      t.dataset.vx=rand(-.5,.5);t.dataset.vy=rand(-.5,.5);stage.appendChild(t);makeInteractive(t);trashItems.push(t)}
+      message.textContent=`Level ${level}: Clean ${trashCount} items!`;}
+
+    function makeInteractive(el){let drag=false,sx,sy,ox,oy;
+      el.addEventListener('pointerdown',e=>{drag=true;el.setPointerCapture(e.pointerId);sx=parseFloat(el.style.left);sy=parseFloat(el.style.top);ox=e.clientX;oy=e.clientY;el.classList.add('wiggle')});
+      window.addEventListener('pointermove',e=>{if(!drag)return;el.style.left=sx+(e.clientX-ox)+'px';el.style.top=sy+(e.clientY-oy)+'px'});
+      window.addEventListener('pointerup',e=>{if(!drag)return;drag=false;el.classList.remove('wiggle');if(overlap(el.getBoundingClientRect(),bin.getBoundingClientRect()))catchTrash(el)});
+    }
+
+    function overlap(a,b){return!(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)}
+
+    function catchTrash(el){if(el.caught)return;el.caught=true;playCatch();bin.classList.add('catch-anim');setTimeout(()=>bin.classList.remove('catch-anim'),200);
+      el.style.opacity=0;setTimeout(()=>el.remove(),250);recycled++;scoreEl.textContent=`Recycled: ${recycled}`;trashItems=trashItems.filter(x=>x!==el);
+      if(recycled>=trashCount)setTimeout(levelUp,600)}
+
+    function levelUp(){level++;trashCount=3+level*2;recycled=0;levelEl.textContent=`Level: ${level}`;scoreEl.textContent=`Recycled: ${recycled}`;
+      message.textContent='Level up! New trash incoming...';setTimeout(()=>createTrash(trashCount),900)}
+
+    let mouse={x:0,y:0};window.addEventListener('pointermove',e=>{mouse={x:e.clientX,y:e.clientY}});
+    function loop(){for(const el of trashItems){if(el.caught)continue;let vx=parseFloat(el.dataset.vx),vy=parseFloat(el.dataset.vy);
+        let x=parseFloat(el.style.left),y=parseFloat(el.style.top);let dx=x-mouse.x,dy=y-mouse.y,dist=Math.hypot(dx,dy);
+        if(dist<120){vx+=(dx/dist)*.6;vy+=(dy/dist)*.6;el.classList.add('wiggle')}else{el.classList.remove('wiggle')}
+        vx*=.98;vy*=.98;x+=vx;y+=vy;
+        x=Math.max(30,Math.min(window.innerWidth-60,x));y=Math.max(100,Math.min(window.innerHeight-80,y));
+        el.style.left=x+'px';el.style.top=y+'px';el.dataset.vx=vx;el.dataset.vy=vy;}
+      requestAnimationFrame(loop)}
+
+    function pawShuffle(){if(Math.random()<.05){paw.style.opacity=1;setTimeout(()=>{for(const t of trashItems){t.style.left=rand(50,window.innerWidth-100)+'px';t.style.top=rand(120,window.innerHeight-150)+'px'}paw.style.opacity=0},700)}
+      setTimeout(pawShuffle,2000)}
+
+    function start(){if(started)return;started=true;startMusic();message.textContent='Go! Drag trash into the bin.';createTrash(trashCount);loop();pawShuffle()}
+
+    window.addEventListener('pointerdown',start,{once:true});
+  </script>
+</body>
+</html>
